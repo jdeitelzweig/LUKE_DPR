@@ -27,7 +27,7 @@ from torch import nn
 from dpr.utils.data_utils import RepTokenSelector
 from dpr.data.qa_validation import calculate_matches, calculate_chunked_matches, calculate_matches_from_meta
 from dpr.data.retriever_data import KiltCsvCtxSrc, TableChunk
-from dpr.data.speech_data import SpeechQASample
+# from dpr.data.speech_data import SpeechQASample
 from dpr.indexer.faiss_indexers import (
     DenseIndexer,
 )
@@ -72,14 +72,14 @@ def generate_question_vectors(
             else:
                 batch_tensors = [tensorizer.text_to_tensor(q) for q in batch_questions]
 
-            # TODO: this only works for Wav2vec pipeline but will crash the regular text pipeline
-            max_vector_len = max(q_t.size(1) for q_t in batch_tensors)
-            min_vector_len = min(q_t.size(1) for q_t in batch_tensors)
+            # # TODO: this only works for Wav2vec pipeline but will crash the regular text pipeline
+            # max_vector_len = max(q_t.size(1) for q_t in batch_tensors)
+            # min_vector_len = min(q_t.size(1) for q_t in batch_tensors)
 
-            if max_vector_len != min_vector_len:
-                # TODO: _pad_to_len move to utils
-                from dpr.models.reader import _pad_to_len
-                batch_tensors = [_pad_to_len(q.squeeze(0), 0, max_vector_len) for q in batch_tensors]
+            # if max_vector_len != min_vector_len:
+            #     # TODO: _pad_to_len move to utils
+            #     from dpr.models.reader import _pad_to_len
+            #     batch_tensors = [_pad_to_len(q.squeeze(0), 0, max_vector_len) for q in batch_tensors]
 
             q_ids_batch = torch.stack(batch_tensors, dim=0).cuda()
             q_seg_batch = torch.zeros_like(q_ids_batch).cuda()
@@ -519,8 +519,8 @@ def main(cfg: DictConfig):
     for i in range(total_queries):
         qa_sample = qa_src[i]
         question, answers = qa_sample.query, qa_sample.answers
-        if isinstance(qa_sample, SpeechQASample):
-            questions_text.append(qa_sample.query_text)
+        # if isinstance(qa_sample, SpeechQASample):
+        #     questions_text.append(qa_sample.query_text)
         questions.append(question)
         question_answers.append(answers)
 

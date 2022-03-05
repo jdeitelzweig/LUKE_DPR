@@ -33,3 +33,6 @@ curatedtrec_test:
   _target_: dpr.data.retriever_data.CsvQASrc
   file: data.retriever.qas.curatedtrec-test
 
+eq_test:
+  _target_: dpr.data.retriever_data.CsvQASrc
+  file: /n/fs/nlp-jacksond/projects/DPR/downloads/data/retriever/qas/eq-test.csv
