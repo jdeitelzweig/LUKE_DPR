@@ -697,15 +697,25 @@ def _do_biencoder_fwd_pass(
 
     q_attn_mask = tensorizer.get_attn_mask(input.question_ids)
     ctx_attn_mask = tensorizer.get_attn_mask(input.context_ids)
+    q_ent_attn_mask = tensorizer.get_attn_mask(input.question_entity_ids)
+    ctx_ent_attn_mask = tensorizer.get_attn_mask(input.ctx_entity_ids)
 
     if model.training:
         model_out = model(
             input.question_ids,
             input.question_segments,
             q_attn_mask,
+            input.question_entity_ids,
+            input.question_entity_segments,
+            q_ent_attn_mask,
+            input.question_entity_position_ids,
             input.context_ids,
             input.ctx_segments,
             ctx_attn_mask,
+            input.ctx_entity_ids,
+            input.ctx_entity_segments,
+            ctx_ent_attn_mask,
+            input.ctx_entity_position_ids,
             encoder_type=encoder_type,
             representation_token_pos=rep_positions,
         )
@@ -715,9 +725,17 @@ def _do_biencoder_fwd_pass(
                 input.question_ids,
                 input.question_segments,
                 q_attn_mask,
+                input.question_entity_ids,
+                input.question_entity_segments,
+                q_ent_attn_mask,
+                input.question_entity_position_ids,
                 input.context_ids,
                 input.ctx_segments,
                 ctx_attn_mask,
+                input.ctx_entity_ids,
+                input.ctx_entity_segments,
+                ctx_ent_attn_mask,
+                input.ctx_entity_position_ids,
                 encoder_type=encoder_type,
                 representation_token_pos=rep_positions,
             )

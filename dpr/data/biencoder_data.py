@@ -13,7 +13,8 @@ from dpr.data.tables import Table
 from dpr.utils.data_utils import read_data_from_json_files, Dataset
 
 logger = logging.getLogger(__name__)
-BiEncoderPassage = collections.namedtuple("BiEncoderPassage", ["text", "title"])
+BiEncoderQuery = collections.namedtuple("BiEncoderQuery", ["text", "entities", "entity_spans"])
+BiEncoderPassage = collections.namedtuple("BiEncoderPassage", ["text", "title", "entities", "entity_spans"])
 
 
 def get_dpr_files(source_name) -> List[str]:
@@ -26,7 +27,7 @@ def get_dpr_files(source_name) -> List[str]:
 
 
 class BiEncoderSample(object):
-    query: str
+    query: BiEncoderQuery
     positive_passages: List[BiEncoderPassage]
     negative_passages: List[BiEncoderPassage]
     hard_negative_passages: List[BiEncoderPassage]
@@ -81,7 +82,22 @@ class JsonQADataset(Dataset):
     def __getitem__(self, index) -> BiEncoderSample:
         json_sample = self.data[index]
         r = BiEncoderSample()
-        r.query = self._process_query(json_sample["question"])
+
+        def process_entities(entity_list):
+            entities = []
+            spans = []
+            for entity, start, end in entity_list:
+                entities.append(entity)
+                spans.append((start, end))
+            return entities, spans
+
+        # q_entities, q_spans = process_entities(json_sample["entities"])
+        q_entities, q_spans = process_entities([])
+        r.query = BiEncoderQuery(
+            self._process_query(json_sample["question"]),
+            q_entities,
+            q_spans
+        )
 
         positive_ctxs = json_sample["positive_ctxs"]
         if self.exclude_gold:
@@ -97,9 +113,13 @@ class JsonQADataset(Dataset):
                 ctx["title"] = None
 
         def create_passage(ctx: dict):
+            # p_entities, p_spans = process_entities(ctx["entities"])
+            p_entities, p_spans = process_entities([])
             return BiEncoderPassage(
                 normalize_passage(ctx["text"]) if self.normalize else ctx["text"],
                 ctx["title"],
+                p_entities,
+                p_spans
             )
 
         r.positive_passages = [create_passage(ctx) for ctx in positive_ctxs]

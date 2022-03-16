@@ -31,8 +31,14 @@ BiEncoderBatch = collections.namedtuple(
     [
         "question_ids",
         "question_segments",
+        "question_entity_ids",
+        "question_entity_position_ids",
+        "question_entity_segments",
         "context_ids",
         "ctx_segments",
+        "ctx_entity_ids",
+        "ctx_entity_position_ids",
+        "ctx_entity_segments",
         "is_positive",
         "hard_negatives",
         "encoder_type",
@@ -81,6 +87,10 @@ class BiEncoder(nn.Module):
         ids: T,
         segments: T,
         attn_mask: T,
+        ent_ids: T,
+        ent_segments: T,
+        ent_attn_mask: T,
+        ent_position_ids: T,
         fix_encoder: bool = False,
         representation_token_pos=0,
     ) -> Tuple[T, T, T]:
@@ -94,6 +104,10 @@ class BiEncoder(nn.Module):
                         ids,
                         segments,
                         attn_mask,
+                        ent_ids,
+                        ent_segments,
+                        ent_attn_mask,
+                        ent_position_ids,
                         representation_token_pos=representation_token_pos,
                     )
 
@@ -105,6 +119,10 @@ class BiEncoder(nn.Module):
                     ids,
                     segments,
                     attn_mask,
+                    ent_ids,
+                    ent_segments,
+                    ent_attn_mask,
+                    ent_position_ids,
                     representation_token_pos=representation_token_pos,
                 )
 
@@ -115,9 +133,17 @@ class BiEncoder(nn.Module):
         question_ids: T,
         question_segments: T,
         question_attn_mask: T,
+        question_entity_ids: T,
+        question_entity_segments: T,
+        question_entity_attn_mask: T,
+        question_entity_position_ids: T,
         context_ids: T,
         ctx_segments: T,
         ctx_attn_mask: T,
+        context_entity_ids: T,
+        ctx_entity_segments: T,
+        ctx_entity_attn_mask: T,
+        ctx_entity_position_ids: T,
         encoder_type: str = None,
         representation_token_pos=0,
     ) -> Tuple[T, T]:
@@ -127,13 +153,25 @@ class BiEncoder(nn.Module):
             question_ids,
             question_segments,
             question_attn_mask,
+            question_entity_ids,
+            question_entity_segments,
+            question_entity_attn_mask,
+            question_entity_position_ids,
             self.fix_q_encoder,
             representation_token_pos=representation_token_pos,
         )
 
         ctx_encoder = self.ctx_model if encoder_type is None or encoder_type == "ctx" else self.question_model
         _ctx_seq, ctx_pooled_out, _ctx_hidden = self.get_representation(
-            ctx_encoder, context_ids, ctx_segments, ctx_attn_mask, self.fix_ctx_encoder
+            ctx_encoder, 
+            context_ids, 
+            ctx_segments, 
+            ctx_attn_mask,
+            context_entity_ids,
+            ctx_entity_segments,
+            ctx_entity_attn_mask,
+            ctx_entity_position_ids,
+            self.fix_ctx_encoder
         )
 
         return q_pooled_out, ctx_pooled_out
@@ -162,7 +200,11 @@ class BiEncoder(nn.Module):
         :return: BiEncoderBatch tuple
         """
         question_tensors = []
+        question_entity_tensors = []
+        question_entity_position_ids = []
         ctx_tensors = []
+        ctx_entity_tensors = []
+        ctxs_entity_position_ids = []
         positive_ctx_indices = []
         hard_neg_ctx_indices = []
 
@@ -197,12 +239,26 @@ class BiEncoder(nn.Module):
 
             current_ctxs_len = len(ctx_tensors)
 
-            sample_ctxs_tensors = [
-                tensorizer.text_to_tensor(ctx.text, title=ctx.title if (insert_title and ctx.title) else None)
-                for ctx in all_ctxs
-            ]
+            sample_ctxs_tensors = []
+            sample_ctxs_entity_tensors = []
+            sample_ctxs_entity_position_ids = []
+
+            for ctx in all_ctxs:
+                ctx_token_ids, ctx_entity_ids, ctx_entity_position_ids = tensorizer.text_to_tensor(
+                    ctx.text, 
+                    title=ctx.title if (insert_title and ctx.title) else None,
+                    entities=ctx.entities,
+                    entity_spans=ctx.entity_spans
+                )
+
+                sample_ctxs_tensors.append(ctx_token_ids)
+                sample_ctxs_entity_tensors.append(ctx_entity_ids)
+                sample_ctxs_entity_position_ids.append(ctx_entity_position_ids)
 
             ctx_tensors.extend(sample_ctxs_tensors)
+            ctx_entity_tensors.extend(sample_ctxs_entity_tensors)
+            ctxs_entity_position_ids.extend(sample_ctxs_entity_position_ids)
+
             positive_ctx_indices.append(current_ctxs_len)
             hard_neg_ctx_indices.append(
                 [
@@ -217,24 +273,44 @@ class BiEncoder(nn.Module):
             if query_token:
                 # TODO: tmp workaround for EL, remove or revise
                 if query_token == "[START_ENT]":
-                    query_span = _select_span_with_token(question, tensorizer, token_str=query_token)
+                    query_span = _select_span_with_token(question.text, tensorizer, token_str=query_token)
                     question_tensors.append(query_span)
                 else:
-                    question_tensors.append(tensorizer.text_to_tensor(" ".join([query_token, question])))
+                    token_ids, entity_ids, entity_position_ids = tensorizer.text_to_tensor(" ".join([query_token, question.text]), question.entities, question.entity_spans)
+                    question_tensors.append(token_ids)
+                    question_entity_tensors.append(entity_ids)
+                    question_entity_position_ids.append(entity_position_ids)
             else:
-                question_tensors.append(tensorizer.text_to_tensor(question))
+                token_ids, entity_ids, entity_position_ids = tensorizer.text_to_tensor(question.text, question.entities, question.entity_spans)
+                question_tensors.append(token_ids)
+                question_entity_tensors.append(entity_ids)
+                question_entity_position_ids.append(entity_position_ids)
 
         ctxs_tensor = torch.cat([ctx.view(1, -1) for ctx in ctx_tensors], dim=0)
+        ctxs_entity_tensor = torch.cat([ctx.view(1, -1) for ctx in ctx_entity_tensors], dim=0)
         questions_tensor = torch.cat([q.view(1, -1) for q in question_tensors], dim=0)
+        questions_entity_tensor = torch.cat([q.view(1, -1) for q in question_entity_tensors], dim=0)
+
+        max_mention_length = tensorizer.get_max_mention_length()
+        question_entity_position_ids = torch.cat([q.view(1, -1, max_mention_length) for q in question_entity_position_ids], dim=0)
+        ctxs_entity_position_ids = torch.cat([ctx.view(1, -1, max_mention_length) for ctx in ctxs_entity_position_ids], dim=0)
 
         ctx_segments = torch.zeros_like(ctxs_tensor)
         question_segments = torch.zeros_like(questions_tensor)
+        question_entity_segments = torch.zeros_like(questions_entity_tensor)
+        ctx_entity_segments = torch.zeros_like(ctxs_entity_tensor)
 
         return BiEncoderBatch(
             questions_tensor,
             question_segments,
+            questions_entity_tensor,
+            question_entity_position_ids,
+            question_entity_segments,
             ctxs_tensor,
             ctx_segments,
+            ctxs_entity_tensor,
+            ctxs_entity_position_ids,
+            ctx_entity_segments,
             positive_ctx_indices,
             hard_neg_ctx_indices,
             "question",

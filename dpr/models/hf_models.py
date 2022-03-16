@@ -347,14 +347,29 @@ class HFLukeEncoder(LukeModel):
         input_ids: T,
         token_type_ids: T,
         attention_mask: T,
+        entity_ids: T,
+        entity_token_type_ids: T,
+        entity_attention_mask: T,
+        entity_position_ids: T,
         representation_token_pos=0,
     ) -> Tuple[T, ...]:
 
-        out = super().forward(
-            input_ids=input_ids,
-            token_type_ids=token_type_ids,
-            attention_mask=attention_mask,
-        )
+        if entity_ids.nelement() > 0:
+            out = super().forward(
+                input_ids=input_ids,
+                token_type_ids=token_type_ids,
+                attention_mask=attention_mask,
+                entity_ids=entity_ids,
+                entity_attention_mask=entity_attention_mask,
+                entity_token_type_ids=entity_token_type_ids,
+                entity_position_ids=entity_position_ids
+            )
+        else:
+            out = super().forward(
+                input_ids=input_ids,
+                token_type_ids=token_type_ids,
+                attention_mask=attention_mask
+            )
 
         # HF >4.0 version support
         if transformers.__version__.startswith("4") and isinstance(
@@ -470,3 +485,56 @@ class RobertaTensorizer(BertTensorizer):
 class LukeTensorizer(BertTensorizer):
     def __init__(self, tokenizer, max_length: int, pad_to_max: bool = True):
         super(LukeTensorizer, self).__init__(tokenizer, max_length, pad_to_max=pad_to_max)
+
+    def text_to_tensor(
+        self,
+        text: str,
+        title: str = None,
+        entities: List[str] = [],
+        entity_spans: List[Tuple[int]] = [],
+        add_special_tokens: bool = True,
+        apply_max_len: bool = True,
+    ):
+        text = text.strip()
+        # tokenizer automatic padding is explicitly disabled since its inconsistent behavior
+        # TODO: move max len to methods params?
+
+        if title:
+            tokenizer_out = self.tokenizer(
+                title,
+                text_pair=text,
+                entities=[title],
+                entity_spans=[(0, len(title))],
+                entities_pair=entities,
+                entity_spans_pair=entity_spans,
+                add_special_tokens=add_special_tokens,
+                max_length=self.max_length if apply_max_len else 10000,
+                pad_to_max_length=False,
+                truncation=True,
+            )
+        else:
+            tokenizer_out = self.tokenizer(
+                text,
+                entities=entities,
+                entity_spans=entity_spans,
+                add_special_tokens=add_special_tokens,
+                max_length=self.max_length if apply_max_len else 10000,
+                pad_to_max_length=False,
+                truncation=True,
+            )
+
+        token_ids = tokenizer_out["input_ids"]
+        entity_ids = tokenizer_out["entity_ids"]
+        entity_position_ids = tokenizer_out["entity_position_ids"]
+
+        seq_len = self.max_length
+        if self.pad_to_max and len(token_ids) < seq_len:
+            token_ids = token_ids + [self.tokenizer.pad_token_id] * (seq_len - len(token_ids))
+        if len(token_ids) >= seq_len:
+            token_ids = token_ids[0:seq_len] if apply_max_len else token_ids
+            token_ids[-1] = self.tokenizer.sep_token_id
+
+        return torch.tensor(token_ids), torch.tensor(entity_ids), torch.tensor(entity_position_ids)
+
+    def get_max_mention_length(self):
+        return self.tokenizer.max_mention_length
