@@ -276,24 +276,24 @@ class BiEncoder(nn.Module):
                     query_span = _select_span_with_token(question.text, tensorizer, token_str=query_token)
                     question_tensors.append(query_span)
                 else:
-                    token_ids, entity_ids, entity_position_ids = tensorizer.text_to_tensor(" ".join([query_token, question.text]), question.entities, question.entity_spans)
+                    token_ids, entity_ids, entity_position_ids = tensorizer.text_to_tensor(" ".join([query_token, question.text]), entities=question.entities, entity_spans=question.entity_spans)
                     question_tensors.append(token_ids)
                     question_entity_tensors.append(entity_ids)
                     question_entity_position_ids.append(entity_position_ids)
             else:
-                token_ids, entity_ids, entity_position_ids = tensorizer.text_to_tensor(question.text, question.entities, question.entity_spans)
+                token_ids, entity_ids, entity_position_ids = tensorizer.text_to_tensor(question.text, entities=question.entities, entity_spans=question.entity_spans)
                 question_tensors.append(token_ids)
                 question_entity_tensors.append(entity_ids)
                 question_entity_position_ids.append(entity_position_ids)
 
-        ctxs_tensor = torch.cat([ctx.view(1, -1) for ctx in ctx_tensors], dim=0)
+        ctxs_tensor = torch.cat([ctx.view(1, -1) for ctx in ctx_tensors], dim=0) 
         ctxs_entity_tensor = torch.cat([ctx.view(1, -1) for ctx in ctx_entity_tensors], dim=0)
         questions_tensor = torch.cat([q.view(1, -1) for q in question_tensors], dim=0)
         questions_entity_tensor = torch.cat([q.view(1, -1) for q in question_entity_tensors], dim=0)
 
-        max_mention_length = tensorizer.get_max_mention_length()
-        question_entity_position_ids = torch.cat([q.view(1, -1, max_mention_length) for q in question_entity_position_ids], dim=0)
-        ctxs_entity_position_ids = torch.cat([ctx.view(1, -1, max_mention_length) for ctx in ctxs_entity_position_ids], dim=0)
+        get_max_mention_length = tensorizer.get_max_mention_length()
+        question_entity_position_ids = torch.cat([q.view(1, -1, get_max_mention_length) for q in question_entity_position_ids], dim=0)
+        ctxs_entity_position_ids = torch.cat([ctx.view(1, -1, get_max_mention_length) for ctx in ctxs_entity_position_ids], dim=0)
 
         ctx_segments = torch.zeros_like(ctxs_tensor)
         question_segments = torch.zeros_like(questions_tensor)

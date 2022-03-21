@@ -534,7 +534,18 @@ class LukeTensorizer(BertTensorizer):
             token_ids = token_ids[0:seq_len] if apply_max_len else token_ids
             token_ids[-1] = self.tokenizer.sep_token_id
 
+        ent_len = self.get_max_entity_length()
+        if len(entity_ids) < ent_len:
+            entity_ids = entity_ids + [self.tokenizer.pad_token_id] * (ent_len - len(entity_ids))
+        
+        if len(entity_position_ids) < ent_len:
+            for _ in range(ent_len - len(entity_position_ids)):
+                entity_position_ids.append([-1] * self.get_max_mention_length())
+
         return torch.tensor(token_ids), torch.tensor(entity_ids), torch.tensor(entity_position_ids)
 
     def get_max_mention_length(self):
         return self.tokenizer.max_mention_length
+    
+    def get_max_entity_length(self):
+        return self.tokenizer.max_entity_length

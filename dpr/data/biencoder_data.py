@@ -91,8 +91,7 @@ class JsonQADataset(Dataset):
                 spans.append((start, end))
             return entities, spans
 
-        # q_entities, q_spans = process_entities(json_sample["entities"])
-        q_entities, q_spans = process_entities([])
+        q_entities, q_spans = process_entities(json_sample["entities"])
         r.query = BiEncoderQuery(
             self._process_query(json_sample["question"]),
             q_entities,
@@ -113,8 +112,7 @@ class JsonQADataset(Dataset):
                 ctx["title"] = None
 
         def create_passage(ctx: dict):
-            # p_entities, p_spans = process_entities(ctx["entities"])
-            p_entities, p_spans = process_entities([])
+            p_entities, p_spans = process_entities(ctx["entities"])
             return BiEncoderPassage(
                 normalize_passage(ctx["text"]) if self.normalize else ctx["text"],
                 ctx["title"],
