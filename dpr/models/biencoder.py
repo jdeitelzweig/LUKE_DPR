@@ -291,9 +291,13 @@ class BiEncoder(nn.Module):
         questions_tensor = torch.cat([q.view(1, -1) for q in question_tensors], dim=0)
         questions_entity_tensor = torch.cat([q.view(1, -1) for q in question_entity_tensors], dim=0)
 
-        get_max_mention_length = tensorizer.get_max_mention_length()
-        question_entity_position_ids = torch.cat([q.view(1, -1, get_max_mention_length) for q in question_entity_position_ids], dim=0)
-        ctxs_entity_position_ids = torch.cat([ctx.view(1, -1, get_max_mention_length) for ctx in ctxs_entity_position_ids], dim=0)
+        try:
+            get_max_mention_length = tensorizer.get_max_mention_length()
+            question_entity_position_ids = torch.cat([q.view(1, -1, get_max_mention_length) for q in question_entity_position_ids], dim=0)
+            ctxs_entity_position_ids = torch.cat([ctx.view(1, -1, get_max_mention_length) for ctx in ctxs_entity_position_ids], dim=0)
+        except AttributeError:
+            question_entity_position_ids = torch.cat([ctx for ctx in question_entity_position_ids], dim=0)
+            ctxs_entity_position_ids = torch.cat([ctx for ctx in ctxs_entity_position_ids], dim=0)
 
         ctx_segments = torch.zeros_like(ctxs_tensor)
         question_segments = torch.zeros_like(questions_tensor)

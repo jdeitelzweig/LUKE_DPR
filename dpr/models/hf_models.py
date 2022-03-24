@@ -272,6 +272,10 @@ class HFBertEncoder(BertModel):
         input_ids: T,
         token_type_ids: T,
         attention_mask: T,
+        entity_ids: T,
+        entity_token_type_ids: T,
+        entity_attention_mask: T,
+        entity_position_ids: T,
         representation_token_pos=0,
     ) -> Tuple[T, ...]:
 
@@ -421,6 +425,8 @@ class BertTensorizer(Tensorizer):
         self,
         text: str,
         title: str = None,
+        entities: List[str] = [],
+        entity_spans: List[Tuple[int]] = [],
         add_special_tokens: bool = True,
         apply_max_len: bool = True,
     ):
@@ -453,7 +459,7 @@ class BertTensorizer(Tensorizer):
             token_ids = token_ids[0:seq_len] if apply_max_len else token_ids
             token_ids[-1] = self.tokenizer.sep_token_id
 
-        return torch.tensor(token_ids)
+        return torch.tensor(token_ids), torch.tensor([]), torch.tensor([])
 
     def get_pair_separator_ids(self) -> T:
         return torch.tensor([self.tokenizer.sep_token_id])
@@ -499,6 +505,18 @@ class LukeTensorizer(BertTensorizer):
         # tokenizer automatic padding is explicitly disabled since its inconsistent behavior
         # TODO: move max len to methods params?
 
+        # remove invalid spans
+        new_ents = []
+        new_spans = []
+        for ent, span in zip(entities, entity_spans):
+            if span[0] < len(text) and span[1] < len(text):
+                new_ents.append(ent)
+                new_spans.append(span)
+
+        entities = new_ents
+        entity_spans = new_spans
+
+
         if title:
             tokenizer_out = self.tokenizer(
                 title,
@@ -537,7 +555,14 @@ class LukeTensorizer(BertTensorizer):
         ent_len = self.get_max_entity_length()
         if len(entity_ids) < ent_len:
             entity_ids = entity_ids + [self.tokenizer.pad_token_id] * (ent_len - len(entity_ids))
+        else:
+            entity_ids = entity_ids[:ent_len]
         
+        for i in range(len(entity_position_ids)):
+            ent_position_id = entity_position_ids[i]
+            if len(ent_position_id) > self.get_max_mention_length():
+                entity_position_ids[i] = ent_position_id[:self.get_max_mention_length()]
+
         if len(entity_position_ids) < ent_len:
             for _ in range(ent_len - len(entity_position_ids)):
                 entity_position_ids.append([-1] * self.get_max_mention_length())
