@@ -10,7 +10,7 @@ nq_train_hn1:
 
 nq_train_ent:
   _target_: dpr.data.biencoder_data.JsonQADataset
-  file: "/n/fs/nlp-jacksond/projects/LUKE_DPR/data/retriever/pseudo-nq-train-bm25.json"
+  file: "/n/fs/nlp-jacksond/projects/LUKE_DPR/data/retriever/pseudo-nq-train.json"
 
 nq_dev:
   _target_: dpr.data.biencoder_data.JsonQADataset
@@ -18,7 +18,7 @@ nq_dev:
 
 nq_dev_ent:
   _target_: dpr.data.biencoder_data.JsonQADataset
-  file: "/n/fs/nlp-jacksond/projects/LUKE_DPR/data/retriever/pseudo-nq-dev-bm25.json"
+  file: "/n/fs/nlp-jacksond/projects/LUKE_DPR/data/retriever/pseudo-nq-dev.json"
 
 trivia_train:
   _target_: dpr.data.biencoder_data.JsonQADataset

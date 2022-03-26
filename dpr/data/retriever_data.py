@@ -1,3 +1,4 @@
+import ast
 import collections
 import csv
 import json
@@ -250,20 +251,34 @@ class TTS_ASR_QASrc(QASrc):
         self.data = data
 
 
+def process_entities(ent_offsets):
+    entities = []
+    entity_spans = []
+    for ent, start, end in ent_offsets:
+        entities.append(ent)
+        entity_spans.append((start, end))
+    return entities, entity_spans
+
+
 class CsvCtxSrc(RetrieverData):
     def __init__(
         self,
         file: str,
+        cache: str,
         id_col: int = 0,
         text_col: int = 1,
         title_col: int = 2,
+        entities_col: int = 3,
         id_prefix: str = None,
         normalize: bool = False,
     ):
         super().__init__(file)
+        logger.info("Loading entity cache")
+        self.cache = json.load(open(cache))
         self.text_col = text_col
         self.title_col = title_col
         self.id_col = id_col
+        self.entities_col = entities_col
         self.id_prefix = id_prefix
         self.normalize = normalize
 
@@ -284,7 +299,11 @@ class CsvCtxSrc(RetrieverData):
                 passage = row[self.text_col].strip('"')
                 if self.normalize:
                     passage = normalize_passage(passage)
-                ctxs[sample_id] = BiEncoderPassage(passage, row[self.title_col])
+                entities, entity_spans = process_entities(self.cache[str(row[self.id_col])]) if str(row[self.id_col]) in self.cache else [], []
+                try:
+                    ctxs[sample_id] = BiEncoderPassage(passage, row[self.title_col], entities, entity_spans)
+                except IndexError:
+                    continue
 
 
 class KiltCsvCtxSrc(CsvCtxSrc):

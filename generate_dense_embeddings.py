@@ -51,15 +51,29 @@ def gen_ctx_vectors(
     results = []
     for j, batch_start in enumerate(range(0, n, bsz)):
         batch = ctx_rows[batch_start : batch_start + bsz]
-        batch_token_tensors = [
-            tensorizer.text_to_tensor(ctx[1].text, title=ctx[1].title if insert_title else None) for ctx in batch
-        ]
+        batch_token_tensors = []
+        batch_entity_tensors = []
+        batch_entity_position_ids = []
+        for ctx in batch:
+            token_ids, entity_ids, ent_pos_ids = tensorizer.text_to_tensor(
+                ctx[1].text, 
+                title=ctx[1].title if insert_title else None, 
+                entities=ctx[1].entities, 
+                entity_spans=ctx[1].entity_spans
+            )
+            batch_token_tensors.append(token_ids)
+            batch_entity_tensors.append(entity_ids)
+            batch_entity_position_ids.append(ent_pos_ids)
 
         ctx_ids_batch = move_to_device(torch.stack(batch_token_tensors, dim=0), cfg.device)
         ctx_seg_batch = move_to_device(torch.zeros_like(ctx_ids_batch), cfg.device)
         ctx_attn_mask = move_to_device(tensorizer.get_attn_mask(ctx_ids_batch), cfg.device)
+        ctx_ent_ids_batch = move_to_device(torch.stack(batch_entity_tensors, dim=0), cfg.device)
+        ctx_ent_seg_batch = move_to_device(torch.zeros_like(ctx_ent_ids_batch), cfg.device)
+        ctx_ent_pos_ids_batch = move_to_device(torch.stack(batch_entity_position_ids, dim=0), cfg.device)
+        ctx_ent_attn_mask = move_to_device(tensorizer.get_attn_mask(ctx_ent_ids_batch), cfg.device)
         with torch.no_grad():
-            _, out, _ = model(ctx_ids_batch, ctx_seg_batch, ctx_attn_mask)
+            _, out, _ = model(ctx_ids_batch, ctx_seg_batch, ctx_attn_mask, ctx_ent_ids_batch, ctx_ent_seg_batch, ctx_ent_attn_mask, ctx_ent_pos_ids_batch)
         out = out.cpu()
 
         ctx_ids = [r[0] for r in batch]

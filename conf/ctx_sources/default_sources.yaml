@@ -2,5 +2,6 @@
 
 dpr_wiki:
   _target_: dpr.data.retriever_data.CsvCtxSrc
-  file: data.wikipedia_split.psgs_w100
+  file: "/n/fs/nlp-jacksond/projects/LUKE_DPR/data/wikipedia_splits/psgs_w100_ent.tsv"
+  cache: "/n/fs/nlp-jacksond/projects/LUKE_DPR/data/wikipedia_splits/cached_entities.json"
   id_prefix: 'wiki:'
