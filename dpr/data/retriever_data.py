@@ -304,7 +304,12 @@ class CsvCtxSrc(RetrieverData):
                 passage = row[self.text_col].strip('"')
                 if self.normalize:
                     passage = normalize_passage(passage)
-                entities, entity_spans = process_entities(self.cache[str(row[self.id_col])]) if str(row[self.id_col]) in self.cache else [], []
+
+                if str(row[self.id_col]) in self.cache:
+                    entities, entity_spans = process_entities(self.cache[str(row[self.id_col])])
+                else:
+                    entities, entity_spans = [], []
+                assert len(entities) == len(entity_spans)
                 try:
                     ctxs[sample_id] = BiEncoderPassage(passage, row[self.title_col], entities, entity_spans)
                 except IndexError:
