@@ -10,6 +10,7 @@ Encoder model wrappers based on HuggingFace code
 """
 
 import logging
+import random
 from typing import Tuple, List
 
 import torch
@@ -316,7 +317,7 @@ class HFBertEncoder(BertModel):
 
         if self.encode_proj:
             pooled_output = self.encode_proj(pooled_output)
-        return sequence_output, pooled_output, hidden_states
+        return sequence_output, pooled_output, hidden_states, torch.tensor([])
 
     # TODO: make a super class for all encoders
     def get_out_size(self):
@@ -383,6 +384,7 @@ class HFLukeEncoder(LukeModel):
             sequence_output = out.last_hidden_state
             pooled_output = None
             hidden_states = out.hidden_states
+            ent_sequence_output = out.entity_last_hidden_state
 
         elif self.config.output_hidden_states:
             sequence_output, pooled_output, hidden_states = out
@@ -397,6 +399,9 @@ class HFLukeEncoder(LukeModel):
 
         if isinstance(representation_token_pos, int):
             pooled_output = sequence_output[:, representation_token_pos, :]
+            # TODO: figure out a way to get this pad index to not be a magic number
+            ent_idx = random.choice(torch.where(entity_token_type_ids[0] != 1)[0])
+            random_entity_output = ent_sequence_output[:, ent_idx, :]
         else:  # treat as a tensor
             bsz = sequence_output.size(0)
             assert representation_token_pos.size(0) == bsz, "query bsz={} while representation_token_pos bsz={}".format(
@@ -406,7 +411,7 @@ class HFLukeEncoder(LukeModel):
 
         if self.encode_proj:
             pooled_output = self.encode_proj(pooled_output)
-        return sequence_output, pooled_output, hidden_states
+        return sequence_output, pooled_output, hidden_states, random_entity_output
 
     # TODO: make a super class for all encoders
     def get_out_size(self):

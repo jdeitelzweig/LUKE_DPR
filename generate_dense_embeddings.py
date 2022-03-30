@@ -73,7 +73,7 @@ def gen_ctx_vectors(
         ctx_ent_pos_ids_batch = move_to_device(torch.stack(batch_entity_position_ids, dim=0), cfg.device)
         ctx_ent_attn_mask = move_to_device(tensorizer.get_attn_mask(ctx_ent_ids_batch), cfg.device)
         with torch.no_grad():
-            _, out, _ = model(ctx_ids_batch, ctx_seg_batch, ctx_attn_mask, ctx_ent_ids_batch, ctx_ent_seg_batch, ctx_ent_attn_mask, ctx_ent_pos_ids_batch)
+            _, out, _, _ = model(ctx_ids_batch, ctx_seg_batch, ctx_attn_mask, ctx_ent_ids_batch, ctx_ent_seg_batch, ctx_ent_attn_mask, ctx_ent_pos_ids_batch)
         out = out.cpu()
 
         ctx_ids = [r[0] for r in batch]

@@ -4,7 +4,7 @@ import csv
 import json
 import logging
 import pickle
-from typing import Dict, List
+from typing import Dict, List, Tuple
 
 import hydra
 import jsonlines
@@ -27,10 +27,12 @@ TableChunk = collections.namedtuple("TableChunk", ["text", "title", "table_id"])
 
 
 class QASample:
-    def __init__(self, query: str, id, answers: List[str]):
+    def __init__(self, query: str, id, answers: List[str], entities: List[str], entity_spans: List[Tuple[int]]):
         self.query = query
         self.id = id
         self.answers = answers
+        self.entities = entities
+        self.entity_spans = entity_spans
 
 
 class RetrieverData(torch.utils.data.Dataset):
@@ -83,6 +85,7 @@ class CsvQASrc(QASrc):
         file: str,
         question_col: int = 0,
         answers_col: int = 1,
+        entities_col: int = 2,
         id_col: int = -1,
         selector: DictConfig = None,
         special_query_token: str = None,
@@ -93,6 +96,7 @@ class CsvQASrc(QASrc):
         super().__init__(file, selector, special_query_token, query_special_suffix)
         self.question_col = question_col
         self.answers_col = answers_col
+        self.entities_col = entities_col
         self.id_col = id_col
         self.data_range_start = data_range_start
         self.data_size = data_size
@@ -109,13 +113,14 @@ class CsvQASrc(QASrc):
             for row in reader:
                 question = row[self.question_col]
                 answers = eval(row[self.answers_col])
+                entities, entity_spans = process_entities(eval(row[self.entities_col]))
                 id = None
                 if self.id_col >= 0:
                     id = row[self.id_col]
                 samples_count += 1
                 # if start !=-1 and samples_count<=start:
                 #    continue
-                data.append(QASample(self._process_question(question), id, answers))
+                data.append(QASample(self._process_question(question), id, answers, entities, entity_spans))
 
         if start != -1:
             end = start + self.data_size if self.data_size != -1 else -1

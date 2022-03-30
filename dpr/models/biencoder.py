@@ -97,10 +97,11 @@ class BiEncoder(nn.Module):
         sequence_output = None
         pooled_output = None
         hidden_states = None
+        random_entity_output = None
         if ids is not None:
             if fix_encoder:
                 with torch.no_grad():
-                    sequence_output, pooled_output, hidden_states = sub_model(
+                    sequence_output, pooled_output, hidden_states, random_entity_output = sub_model(
                         ids,
                         segments,
                         attn_mask,
@@ -115,7 +116,7 @@ class BiEncoder(nn.Module):
                     sequence_output.requires_grad_(requires_grad=True)
                     pooled_output.requires_grad_(requires_grad=True)
             else:
-                sequence_output, pooled_output, hidden_states = sub_model(
+                sequence_output, pooled_output, hidden_states, random_entity_output = sub_model(
                     ids,
                     segments,
                     attn_mask,
@@ -126,7 +127,7 @@ class BiEncoder(nn.Module):
                     representation_token_pos=representation_token_pos,
                 )
 
-        return sequence_output, pooled_output, hidden_states
+        return sequence_output, pooled_output, hidden_states, random_entity_output
 
     def forward(
         self,
@@ -148,7 +149,7 @@ class BiEncoder(nn.Module):
         representation_token_pos=0,
     ) -> Tuple[T, T]:
         q_encoder = self.question_model if encoder_type is None or encoder_type == "question" else self.ctx_model
-        _q_seq, q_pooled_out, _q_hidden = self.get_representation(
+        _q_seq, q_pooled_out, _q_hidden, q_ent_out = self.get_representation(
             q_encoder,
             question_ids,
             question_segments,
@@ -162,7 +163,7 @@ class BiEncoder(nn.Module):
         )
 
         ctx_encoder = self.ctx_model if encoder_type is None or encoder_type == "ctx" else self.question_model
-        _ctx_seq, ctx_pooled_out, _ctx_hidden = self.get_representation(
+        _ctx_seq, ctx_pooled_out, _ctx_hidden, ctx_ent_out = self.get_representation(
             ctx_encoder, 
             context_ids, 
             ctx_segments, 
@@ -174,7 +175,7 @@ class BiEncoder(nn.Module):
             self.fix_ctx_encoder
         )
 
-        return q_pooled_out, ctx_pooled_out
+        return q_pooled_out, ctx_pooled_out, q_ent_out, ctx_ent_out
 
     def create_biencoder_input(
         self,
@@ -372,6 +373,55 @@ class BiEncoderNllLoss(object):
     def get_scores(q_vector: T, ctx_vectors: T) -> T:
         f = BiEncoderNllLoss.get_similarity_function()
         return f(q_vector, ctx_vectors)
+
+    @staticmethod
+    def get_similarity_function():
+        return dot_product_scores
+
+
+class BiEncoderEntLoss(object):
+    def calc(
+        self,
+        q_vectors: T,
+        ctx_vectors: T,
+        q_ent_vectors: T,
+        ctx_ent_vectors: T,
+        positive_idx_per_question: list,
+        hard_negative_idx_per_question: list = None,
+        loss_scale: float = None,
+    ) -> Tuple[T, int]:
+        """
+        Computes nll loss for the given lists of question and ctx vectors.
+        Note that although hard_negative_idx_per_question in not currently in use, one can use it for the
+        loss modifications. For example - weighted NLL with different factors for hard vs regular negatives.
+        :return: a tuple of loss value and amount of correct predictions per batch
+        """
+        scores = self.get_scores(q_vectors, ctx_vectors, q_ent_vectors, ctx_ent_vectors)
+
+        if len(q_vectors.size()) > 1:
+            q_num = q_vectors.size(0)
+            scores = scores.view(q_num, -1)
+
+        softmax_scores = F.log_softmax(scores, dim=1)
+
+        loss = F.nll_loss(
+            softmax_scores,
+            torch.tensor(positive_idx_per_question).to(softmax_scores.device),
+            reduction="mean",
+        )
+
+        max_score, max_idxs = torch.max(softmax_scores, 1)
+        correct_predictions_count = (max_idxs == torch.tensor(positive_idx_per_question).to(max_idxs.device)).sum()
+
+        if loss_scale:
+            loss.mul_(loss_scale)
+
+        return loss, correct_predictions_count
+
+    @staticmethod
+    def get_scores(q_vector: T, ctx_vectors: T, q_ent_vector, ctx_ent_vectors) -> T:
+        f = BiEncoderEntLoss.get_similarity_function()
+        return f(q_vector, ctx_vectors) + f(q_ent_vector, ctx_ent_vectors)
 
     @staticmethod
     def get_similarity_function():

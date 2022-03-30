@@ -25,7 +25,7 @@ from torch import Tensor as T
 from torch import nn
 
 from dpr.models import init_biencoder_components
-from dpr.models.biencoder import BiEncoderNllLoss, BiEncoderBatch
+from dpr.models.biencoder import BiEncoderEntLoss, BiEncoderNllLoss, BiEncoderBatch
 from dpr.options import (
     setup_cfg_gpu,
     set_seed,
@@ -344,6 +344,9 @@ class BiEncoderTrainer(object):
             total_ctxs = len(ctx_represenations)
             ctxs_ids = biencoder_input.context_ids
             ctxs_segments = biencoder_input.ctx_segments
+            ctxs_ent_ids = biencoder_input.ctx_entity_ids
+            ctxs_ent_segments = biencoder_input.ctx_entity_segments
+            ctxs_pos_ids = biencoder_input.ctx_entity_position_ids
             bsz = ctxs_ids.size(0)
 
             # get the token to be used for representation selection
@@ -354,8 +357,14 @@ class BiEncoderTrainer(object):
             # split contexts batch into sub batches since it is supposed to be too large to be processed in one batch
             for j, batch_start in enumerate(range(0, bsz, sub_batch_size)):
 
-                q_ids, q_segments = (
-                    (biencoder_input.question_ids, biencoder_input.question_segments) if j == 0 else (None, None)
+                q_ids, q_segments, q_ent_ids, q_ent_segments, q_ent_pos_ids = (
+                    (
+                        biencoder_input.question_ids, 
+                        biencoder_input.question_segments, 
+                        biencoder_input.question_entity_ids,
+                        biencoder_input.question_entity_segments,
+                        biencoder_input.question_entity_position_ids,
+                    ) if j == 0 else (None, None, None, None, None)
                 )
 
                 if j == 0 and cfg.n_gpu > 1 and q_ids.size(0) == 1:
@@ -365,17 +374,30 @@ class BiEncoderTrainer(object):
 
                 ctx_ids_batch = ctxs_ids[batch_start : batch_start + sub_batch_size]
                 ctx_seg_batch = ctxs_segments[batch_start : batch_start + sub_batch_size]
+                ctx_ent_ids_batch = ctxs_ent_ids[batch_start : batch_start + sub_batch_size]
+                ctx_ent_seg_batch = ctxs_ent_segments[batch_start : batch_start + sub_batch_size]
+                ctx_ent_pos_ids_batch = ctxs_pos_ids[batch_start : batch_start + sub_batch_size]
 
                 q_attn_mask = self.tensorizer.get_attn_mask(q_ids)
                 ctx_attn_mask = self.tensorizer.get_attn_mask(ctx_ids_batch)
+                q_ent_attn_mask = self.tensorizer.get_attn_mask(q_ent_ids)
+                ctx_ent_attn_mask = self.tensorizer.get_attn_mask(ctx_ent_ids_batch)
                 with torch.no_grad():
-                    q_dense, ctx_dense = self.biencoder(
+                    q_dense, ctx_dense, _, _ = self.biencoder(
                         q_ids,
                         q_segments,
                         q_attn_mask,
+                        q_ent_ids,
+                        q_ent_segments,
+                        q_ent_attn_mask,
+                        q_ent_pos_ids,
                         ctx_ids_batch,
                         ctx_seg_batch,
                         ctx_attn_mask,
+                        ctx_ent_ids_batch,
+                        ctx_ent_seg_batch,
+                        ctx_ent_attn_mask,
+                        ctx_ent_pos_ids_batch,
                         encoder_type=encoder_type,
                         representation_token_pos=rep_positions,
                     )
@@ -606,6 +628,8 @@ def _calc_loss(
     loss_function,
     local_q_vector,
     local_ctx_vectors,
+    local_q_ent_vector,
+    local_ctx_ent_vectors,
     local_positive_idxs,
     local_hard_negatives_idxs: list = None,
     loss_scale: float = None,
@@ -618,11 +642,15 @@ def _calc_loss(
     if distributed_world_size > 1:
         q_vector_to_send = torch.empty_like(local_q_vector).cpu().copy_(local_q_vector).detach_()
         ctx_vector_to_send = torch.empty_like(local_ctx_vectors).cpu().copy_(local_ctx_vectors).detach_()
+        q_ent_vector_to_send = torch.empty_like(local_q_ent_vector).cpu().copy_(local_q_ent_vector).detach_()
+        ctx_ent_vector_to_send = torch.empty_like(local_ctx_ent_vectors).cpu().copy_(local_ctx_ent_vectors).detach_()
 
         global_question_ctx_vectors = all_gather_list(
             [
                 q_vector_to_send,
                 ctx_vector_to_send,
+                q_ent_vector_to_send,
+                ctx_ent_vector_to_send,
                 local_positive_idxs,
                 local_hard_negatives_idxs,
             ],
@@ -631,6 +659,8 @@ def _calc_loss(
 
         global_q_vector = []
         global_ctxs_vector = []
+        global_q_ent_vector = []
+        global_ctxs_ent_vector = []
 
         # ctxs_per_question = local_ctx_vectors.size(0)
         positive_idx_per_question = []
@@ -639,31 +669,41 @@ def _calc_loss(
         total_ctxs = 0
 
         for i, item in enumerate(global_question_ctx_vectors):
-            q_vector, ctx_vectors, positive_idx, hard_negatives_idxs = item
+            q_vector, ctx_vectors, q_ent_vector, ctx_ent_vectors, positive_idx, hard_negatives_idxs = item
 
             if i != cfg.local_rank:
                 global_q_vector.append(q_vector.to(local_q_vector.device))
                 global_ctxs_vector.append(ctx_vectors.to(local_q_vector.device))
+                global_q_ent_vector.append(q_ent_vector.to(local_q_vector.device))
+                global_ctxs_ent_vector.append(ctx_ent_vectors.to(local_q_vector.device))
                 positive_idx_per_question.extend([v + total_ctxs for v in positive_idx])
                 hard_negatives_per_question.extend([[v + total_ctxs for v in l] for l in hard_negatives_idxs])
             else:
                 global_q_vector.append(local_q_vector)
                 global_ctxs_vector.append(local_ctx_vectors)
+                global_q_ent_vector.append(local_q_ent_vector)
+                global_ctxs_ent_vector.append(local_ctx_ent_vectors)
                 positive_idx_per_question.extend([v + total_ctxs for v in local_positive_idxs])
                 hard_negatives_per_question.extend([[v + total_ctxs for v in l] for l in local_hard_negatives_idxs])
             total_ctxs += ctx_vectors.size(0)
         global_q_vector = torch.cat(global_q_vector, dim=0)
         global_ctxs_vector = torch.cat(global_ctxs_vector, dim=0)
+        global_q_ent_vector = torch.cat(global_q_ent_vector, dim=0)
+        global_ctxs_ent_vector = torch.cat(global_ctxs_ent_vector, dim=0)
 
     else:
         global_q_vector = local_q_vector
         global_ctxs_vector = local_ctx_vectors
+        global_q_ent_vector = local_q_ent_vector
+        global_ctxs_ent_vector = local_ctx_ent_vectors
         positive_idx_per_question = local_positive_idxs
         hard_negatives_per_question = local_hard_negatives_idxs
 
     loss, is_correct = loss_function.calc(
         global_q_vector,
         global_ctxs_vector,
+        global_q_ent_vector,
+        global_ctxs_ent_vector,
         positive_idx_per_question,
         hard_negatives_per_question,
         loss_scale=loss_scale,
@@ -740,15 +780,20 @@ def _do_biencoder_fwd_pass(
                 representation_token_pos=rep_positions,
             )
 
-    local_q_vector, local_ctx_vectors = model_out
+    local_q_vector, local_ctx_vectors, local_q_ent_vector, local_ctx_ent_vectors = model_out
 
-    loss_function = BiEncoderNllLoss()
+    if cfg.use_entity_loss:
+        loss_function = BiEncoderEntLoss()
+    else:
+        loss_function = BiEncoderNllLoss()
 
     loss, is_correct = _calc_loss(
         cfg,
         loss_function,
         local_q_vector,
         local_ctx_vectors,
+        local_q_ent_vector,
+        local_ctx_ent_vectors,
         input.is_positive,
         input.hard_negatives,
         loss_scale=loss_scale,

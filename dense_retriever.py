@@ -47,6 +47,8 @@ def generate_question_vectors(
     question_encoder: torch.nn.Module,
     tensorizer: Tensorizer,
     questions: List[str],
+    entities: List[str],
+    entity_spans: List[Tuple[int]],
     bsz: int,
     query_token: str = None,
     selector: RepTokenSelector = None,
@@ -57,6 +59,8 @@ def generate_question_vectors(
     with torch.no_grad():
         for j, batch_start in enumerate(range(0, n, bsz)):
             batch_questions = questions[batch_start : batch_start + bsz]
+            batch_entities = entities[batch_start : batch_start + bsz]
+            batch_spans = entity_spans[batch_start : batch_start + bsz]
 
             if query_token:
                 # TODO: tmp workaround for EL, remove or revise
@@ -69,7 +73,18 @@ def generate_question_vectors(
             elif isinstance(batch_questions[0], T):
                 batch_tensors = [q for q in batch_questions]
             else:
-                batch_tensors = [tensorizer.text_to_tensor(q) for q in batch_questions]
+                batch_tensors = []
+                batch_ent_tensors = []
+                batch_ent_pos_ids = []
+                for q, ent, span in zip(batch_questions, batch_entities, batch_spans):
+                    token_ids, entity_ids, ent_pos_ids = tensorizer.text_to_tensor(
+                        q,
+                        entities=ent, 
+                        entity_spans=span
+                    )
+                    batch_tensors.append(token_ids)
+                    batch_ent_tensors.append(entity_ids)
+                    batch_ent_pos_ids.append(ent_pos_ids)
 
             # # TODO: this only works for Wav2vec pipeline but will crash the regular text pipeline
             # max_vector_len = max(q_t.size(1) for q_t in batch_tensors)
@@ -83,19 +98,35 @@ def generate_question_vectors(
             q_ids_batch = torch.stack(batch_tensors, dim=0).cuda()
             q_seg_batch = torch.zeros_like(q_ids_batch).cuda()
             q_attn_mask = tensorizer.get_attn_mask(q_ids_batch)
+            q_ent_ids_batch = torch.stack(batch_ent_tensors, dim=0).cuda()
+            q_ent_seg_batch = torch.zeros_like(q_ent_ids_batch).cuda()
+            q_ent_attn_mask = tensorizer.get_attn_mask(q_ent_ids_batch)
+            q_ent_pos_ids = torch.stack(batch_ent_pos_ids, dim=0).cuda()
 
             if selector:
                 rep_positions = selector.get_positions(q_ids_batch, tensorizer)
 
-                _, out, _ = BiEncoder.get_representation(
+                _, out, _, _ = BiEncoder.get_representation(
                     question_encoder,
                     q_ids_batch,
                     q_seg_batch,
                     q_attn_mask,
+                    q_ent_ids_batch,
+                    q_ent_seg_batch,
+                    q_ent_attn_mask,
+                    q_ent_pos_ids,
                     representation_token_pos=rep_positions,
                 )
             else:
-                _, out, _ = question_encoder(q_ids_batch, q_seg_batch, q_attn_mask)
+                _, out, _, _ = question_encoder(
+                    q_ids_batch, 
+                    q_seg_batch, 
+                    q_attn_mask,
+                    q_ent_ids_batch,
+                    q_ent_seg_batch,
+                    q_ent_attn_mask,
+                    q_ent_pos_ids
+                )
 
             query_vectors.extend(out.cpu().split(1, dim=0))
 
@@ -115,7 +146,7 @@ class DenseRetriever(object):
         self.tensorizer = tensorizer
         self.selector = None
 
-    def generate_question_vectors(self, questions: List[str], query_token: str = None) -> T:
+    def generate_question_vectors(self, questions: List[str], entities: List[str], entity_spans: List[Tuple[int]], query_token: str = None) -> T:
 
         bsz = self.batch_size
         self.question_encoder.eval()
@@ -123,6 +154,8 @@ class DenseRetriever(object):
             self.question_encoder,
             self.tensorizer,
             questions,
+            entities,
+            entity_spans,
             bsz,
             query_token=query_token,
             selector=self.selector,
@@ -503,6 +536,8 @@ def main(cfg: DictConfig):
     questions = []
     questions_text = []
     question_answers = []
+    question_entities = []
+    question_spans = []
 
     if not cfg.qa_dataset:
         logger.warning("Please specify qa_dataset to use")
@@ -517,9 +552,11 @@ def main(cfg: DictConfig):
     total_queries = len(qa_src)
     for i in range(total_queries):
         qa_sample = qa_src[i]
-        question, answers = qa_sample.query, qa_sample.answers
+        question, answers, entities, spans = qa_sample.query, qa_sample.answers, qa_sample.entities, qa_sample.entity_spans
         questions.append(question)
         question_answers.append(answers)
+        question_entities.append(entities)
+        question_spans.append(spans)
 
     logger.info("questions len %d", len(questions))
     logger.info("questions_text len %d", len(questions_text))
@@ -542,7 +579,7 @@ def main(cfg: DictConfig):
         retriever = LocalFaissRetriever(encoder, cfg.batch_size, tensorizer, index)
 
     logger.info("Using special token %s", qa_src.special_query_token)
-    questions_tensor = retriever.generate_question_vectors(questions, query_token=qa_src.special_query_token)
+    questions_tensor = retriever.generate_question_vectors(questions, question_entities, question_spans, query_token=qa_src.special_query_token)
 
     if qa_src.selector:
         logger.info("Using custom representation token selector")

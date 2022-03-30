@@ -9,17 +9,18 @@ from spacy.tokenizer import Tokenizer
 from spacy.lang.en import English
 from gensim.summarization.bm25 import BM25
 
-WIKI_DATA = "/n/fs/nlp-jacksond/projects/EFDPR/data/wikipedia_splits/psgs_w100_ent.tsv"
+WIKI_DATA = "/n/fs/nlp-jacksond/projects/LUKE_DPR/data/wikipedia_splits/psgs_w100_ent.tsv"
 
 # initialize tokenizer
 nlp = English()
 tokenizer = Tokenizer(nlp.vocab)
 
-@dataclass(frozen=True)
+@dataclass
 class Passage:
     passage_id: int
     text: str
     title: str
+    score: float = field(init=False, hash=False)
     entities: list = field(hash=False)
 
     def contains_answer(self, answers) -> bool:
@@ -61,6 +62,8 @@ def get_new_passages(original_passages, wiki_data, used_ids, answers, should_con
             if poss_passage.passage_id not in used_ids and (should_contain_answer == poss_passage.contains_answer(answers)):
                 # make sure we don't use this passage again
                 used_ids.add(poss_passage.passage_id)
+                # poss_passage.entities = ast.literal_eval(poss_passage.entities)
+                poss_passage.score = original_passage["score"]
                 used_passages.append(asdict(poss_passage))
                 found_passage = True
                 break
@@ -97,7 +100,7 @@ def main():
                 if not text:
                     invalid_lines.append(line)
                     continue
-                passages[title].append(Passage(line[0], line[1], title, line[3]))#ast.literal_eval(line[3])))
+                passages[title].append(Passage(line[0], line[1], title, line[3]))
             except IndexError:
                 invalid_lines.append(line)
         print(f"Invalid lines: {len(invalid_lines)}")
