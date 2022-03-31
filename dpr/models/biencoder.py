@@ -337,6 +337,8 @@ class BiEncoderNllLoss(object):
         self,
         q_vectors: T,
         ctx_vectors: T,
+        q_ent_vectors: T,
+        ctx_ent_vectors: T,
         positive_idx_per_question: list,
         hard_negative_idx_per_question: list = None,
         loss_scale: float = None,

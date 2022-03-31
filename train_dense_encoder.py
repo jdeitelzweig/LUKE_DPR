@@ -17,6 +17,7 @@ import random
 import sys
 import time
 from typing import Tuple
+import wandb
 
 import hydra
 import torch
@@ -546,6 +547,8 @@ class BiEncoderTrainer(object):
                     loss.item(),
                     lr,
                 )
+                if cfg.wandb_log:
+                    wandb.log({'loss': loss.item()})
 
             if (i + 1) % rolling_loss_step == 0:
                 logger.info("Train batch %d", data_iteration)
@@ -555,6 +558,8 @@ class BiEncoderTrainer(object):
                     rolling_loss_step,
                     latest_rolling_train_av_loss,
                 )
+                if cfg.wandb_log:
+                    wandb.log({'rolling_loss': latest_rolling_train_av_loss})
                 rolling_train_loss = 0.0
 
             if data_iteration % eval_step == 0:
@@ -825,6 +830,8 @@ def main(cfg: DictConfig):
     if cfg.local_rank in [-1, 0]:
         logger.info("CFG (after gpu  configuration):")
         logger.info("%s", OmegaConf.to_yaml(cfg))
+        cfg.wandb_log = True
+        wandb.init(project="luke_dpr")
 
     trainer = BiEncoderTrainer(cfg)
 
