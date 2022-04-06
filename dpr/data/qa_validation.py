@@ -69,7 +69,7 @@ def calculate_matches(
 
     logger.info("Per question validation results len=%d", len(scores))
 
-    n_docs = len(closest_docs[0][0])
+    n_docs = max([len(docs[0]) for docs in closest_docs])
     top_k_hits = [0] * n_docs
     for question_hits in scores:
         best_hit = next((i for i, x in enumerate(question_hits) if x), None)
@@ -106,7 +106,7 @@ def calculate_matches_from_meta(
 
     logger.info("Per question validation results len=%d", len(scores))
 
-    n_docs = len(closest_docs[0][0])
+    n_docs = max([len(docs[0]) for docs in closest_docs])
     top_k_hits = [0] * n_docs
     for question_hits in scores:
         best_hit = next((i for i, x in enumerate(question_hits) if x), None)
