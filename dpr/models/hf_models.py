@@ -278,6 +278,7 @@ class HFBertEncoder(BertModel):
         entity_attention_mask: T,
         entity_position_ids: T,
         representation_token_pos=0,
+        entity_list_representation=True,
     ) -> Tuple[T, ...]:
 
         out = super().forward(
@@ -357,6 +358,7 @@ class HFLukeEncoder(LukeModel):
         entity_attention_mask: T,
         entity_position_ids: T,
         representation_token_pos=0,
+        entity_list_representation=True,
     ) -> Tuple[T, ...]:
 
         if entity_ids.nelement() > 0:
@@ -399,8 +401,20 @@ class HFLukeEncoder(LukeModel):
 
         if isinstance(representation_token_pos, int):
             pooled_output = sequence_output[:, representation_token_pos, :]
-            # TODO: figure out a way to get this pad index to not be a magic number
-            ent_idx = random.choice(torch.where(entity_token_type_ids[0] != 1)[0])
+            unique_ents, inverse_indices = torch.unique(entity_token_type_ids[0], return_inverse=True)
+
+            # if only pad token, use it as the entity representation
+            if len(unique_ents) == 1:
+                ent_idx = 0
+            else:
+                if entity_list_representation:
+                    # TODO: figure out a way to get this pad index to not be a magic number
+                    ent_idx = random.choice(torch.where(entity_token_type_ids[0] != 0)[0])
+                else:
+                    # skip first since this will be the pad entity
+                    chosen_ent = random.randint(1, len(unique_ents)-1)
+                    # just get first occurrence of this entity even thuogh they may be different in context
+                    ent_idx = torch.where(inverse_indices == chosen_ent)[0][0]
             random_entity_output = ent_sequence_output[:, ent_idx, :]
         else:  # treat as a tensor
             bsz = sequence_output.size(0)
@@ -559,7 +573,7 @@ class LukeTensorizer(BertTensorizer):
 
         ent_len = self.get_max_entity_length()
         if len(entity_ids) < ent_len:
-            entity_ids = entity_ids + [self.tokenizer.pad_token_id] * (ent_len - len(entity_ids))
+            entity_ids = entity_ids + [self.get_entity_pad_token_id()] * (ent_len - len(entity_ids))
         else:
             entity_ids = entity_ids[:ent_len]
         
@@ -573,6 +587,9 @@ class LukeTensorizer(BertTensorizer):
                 entity_position_ids.append([-1] * self.get_max_mention_length())
 
         return torch.tensor(token_ids), torch.tensor(entity_ids), torch.tensor(entity_position_ids)
+
+    def get_entity_pad_token_id(self):
+        return self.tokenizer.entity_vocab["[PAD]"]
 
     def get_max_mention_length(self):
         return self.tokenizer.max_mention_length

@@ -763,6 +763,7 @@ def _do_biencoder_fwd_pass(
             input.ctx_entity_position_ids,
             encoder_type=encoder_type,
             representation_token_pos=rep_positions,
+            entity_list_representation=cfg.entity_loss_as_list,
         )
     else:
         with torch.no_grad():
@@ -783,6 +784,7 @@ def _do_biencoder_fwd_pass(
                 input.ctx_entity_position_ids,
                 encoder_type=encoder_type,
                 representation_token_pos=rep_positions,
+                entity_list_representation=cfg.entity_loss_as_list,
             )
 
     local_q_vector, local_ctx_vectors, local_q_ent_vector, local_ctx_ent_vectors = model_out

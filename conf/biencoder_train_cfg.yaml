@@ -54,7 +54,8 @@ multi_q_encoder: False
 local_shards_dataloader: False
 
 # Type of loss function
-use_entity_loss: True
+use_entity_loss: False
+entity_loss_as_list: False
 
 # Whether to use wandb logging on this node (by default logs on rank -1 or 0)
 wandb_log: False

@@ -93,6 +93,7 @@ class BiEncoder(nn.Module):
         ent_position_ids: T,
         fix_encoder: bool = False,
         representation_token_pos=0,
+        entity_list_representation=True,
     ) -> Tuple[T, T, T]:
         sequence_output = None
         pooled_output = None
@@ -110,6 +111,7 @@ class BiEncoder(nn.Module):
                         ent_attn_mask,
                         ent_position_ids,
                         representation_token_pos=representation_token_pos,
+                        entity_list_representation=entity_list_representation,
                     )
 
                 if sub_model.training:
@@ -125,6 +127,7 @@ class BiEncoder(nn.Module):
                     ent_attn_mask,
                     ent_position_ids,
                     representation_token_pos=representation_token_pos,
+                    entity_list_representation=entity_list_representation,
                 )
 
         return sequence_output, pooled_output, hidden_states, random_entity_output
@@ -147,6 +150,7 @@ class BiEncoder(nn.Module):
         ctx_entity_position_ids: T,
         encoder_type: str = None,
         representation_token_pos=0,
+        entity_list_representation=True,
     ) -> Tuple[T, T]:
         q_encoder = self.question_model if encoder_type is None or encoder_type == "question" else self.ctx_model
         _q_seq, q_pooled_out, _q_hidden, q_ent_out = self.get_representation(
@@ -160,6 +164,7 @@ class BiEncoder(nn.Module):
             question_entity_position_ids,
             self.fix_q_encoder,
             representation_token_pos=representation_token_pos,
+            entity_list_representation=entity_list_representation,
         )
 
         ctx_encoder = self.ctx_model if encoder_type is None or encoder_type == "ctx" else self.question_model
@@ -172,7 +177,8 @@ class BiEncoder(nn.Module):
             ctx_entity_segments,
             ctx_entity_attn_mask,
             ctx_entity_position_ids,
-            self.fix_ctx_encoder
+            self.fix_ctx_encoder,
+            entity_list_representation=entity_list_representation,
         )
 
         return q_pooled_out, ctx_pooled_out, q_ent_out, ctx_ent_out
